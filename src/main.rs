@@ -5,7 +5,7 @@ use std::{collections::HashMap, io::Write, net::TcpStream};
 
 fn main() -> std::io::Result<()> {
     let matches = App::new("Enrich Data Gen")
-        .version("0.1")
+        .version("0.3")
         .about("Does awesome things")
         .arg(
             Arg::with_name("path")
