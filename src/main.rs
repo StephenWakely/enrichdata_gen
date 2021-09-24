@@ -1,19 +1,44 @@
 use chrono::Duration;
+use clap::{App, Arg};
 use rand::seq::SliceRandom;
-use std::collections::HashMap;
+use std::{collections::HashMap, io::Write, net::TcpStream};
 
-fn main() {
-    let args = std::env::args().collect::<Vec<_>>();
+fn main() -> std::io::Result<()> {
+    let matches = App::new("Enrich Data Gen")
+        .version("0.1")
+        .about("Does awesome things")
+        .arg(
+            Arg::with_name("path")
+                .short("p")
+                .long("path")
+                .help("The path of the enrichment file")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("count")
+                .short("c")
+                .long("count")
+                .help("The number of records to sent")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("host")
+                .short("h")
+                .long("host")
+                .help("The host to send the data")
+                .takes_value(true),
+        )
+        .get_matches();
 
-    let count = args
-        .get(1)
-        .and_then(|count| count.parse().ok())
-        .unwrap_or(100_usize);
+    let path = matches
+        .value_of("path")
+        .unwrap_or("/var/lib/vector/data/users.csv");
 
-    let path = args
-        .get(2)
-        .cloned()
-        .unwrap_or("/var/lib/vector/data/users.csv".to_string());
+    let count = matches
+        .value_of("count")
+        .and_then(|count| count.parse().ok());
+
+    let host = matches.value_of("host").unwrap_or("127.0.0.1:9876");
 
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
@@ -54,8 +79,31 @@ fn main() {
         .collect::<Vec<_>>();
 
     let mut rng = &mut rand::thread_rng();
-    for _ in 0..count {
-        let row = data.choose(&mut rng).unwrap();
-        println!("{:?}", row);
+    'forever: loop {
+        println!("Connecting to {}", host);
+        let mut stream = TcpStream::connect(host)?;
+        match count {
+            Some(count) => {
+                for _ in 0..count {
+                    let row = data.choose(&mut rng).unwrap();
+                    let buf = format!("{:?}\n", row);
+                    if let Err(_) = stream.write(buf.as_bytes()) {
+                        // I realise an error here means the count starts from 0 again.
+                        continue 'forever;
+                    }
+                }
+
+                break 'forever;
+            }
+            None => loop {
+                let row = data.choose(&mut rng).unwrap();
+                let buf = format!("{:?}\n", row);
+                if let Err(_) = stream.write(buf.as_bytes()) {
+                    continue 'forever;
+                }
+            },
+        }
     }
+
+    Ok(())
 }
